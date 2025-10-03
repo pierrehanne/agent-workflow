@@ -1,10 +1,10 @@
 # Test Suite
 
-This directory contains comprehensive unit tests for the LLM Workflow Framework.
+This directory contains comprehensive unit tests for the Agent Workflow Framework.
 
 ## Test Coverage
 
-### ✅ Completed Tests (161 tests)
+### ✅ Completed Tests (187 tests)
 
 #### `test_base.py` - Base Module Tests (20 tests)
 Tests for core abstractions:
@@ -73,12 +73,20 @@ Tests for Gemini API provider (requires `google-genai` package):
 uv pip install google-genai
 ```
 
-### 🚧 Pending Tests
+#### `test_orchestrator.py` - Orchestrator Module Tests (26 tests) ✅
+Tests for orchestrator-workers pattern:
+- **Task** (7 tests): Task creation, dependencies, status updates, readiness checks
+- **Worker** (5 tests): Worker initialization, capability matching, task execution
+- **Orchestrator** (14 tests): Worker/task management, execution, dependency resolution, validation
 
-The following test files still need to be created:
-
-- `test_orchestrator.py` - Orchestrator-workers pattern
-- `test_integration.py` - End-to-end workflow tests
+Key test scenarios:
+- Task creation with data and dependencies
+- Worker capability matching and task assignment
+- Single and multiple task execution
+- Dependency-based task ordering
+- Context updates and metadata tracking
+- Validation with/without workers
+- Error handling for missing workers
 
 ## Running Tests
 
@@ -106,17 +114,30 @@ python -m pytest tests/test_base.py::TestWorkflowContext -v
 python -m pytest tests/test_base.py::TestWorkflowContext::test_initialization -v
 ```
 
-### Run with Coverage (requires pytest-cov)
+### Run with Coverage
 
 ```bash
-# Install coverage tool
-uv pip install pytest-cov
+# Run with coverage (terminal output)
+python -m pytest tests/ -v --cov=framework --cov-report=term-missing
 
-# Run with coverage
+# Run with coverage (HTML report)
 python -m pytest tests/ -v --cov=framework --cov-report=html
 
-# View coverage report
+# View HTML coverage report
 open htmlcov/index.html
+```
+
+### Run Tests for Specific Module
+
+```bash
+# Test orchestrator module
+python -m pytest tests/test_orchestrator.py -v
+
+# Test base module
+python -m pytest tests/test_base.py -v
+
+# Test evaluator module
+python -m pytest tests/test_evaluator.py -v
 ```
 
 ## Test Structure
@@ -169,6 +190,24 @@ class MockNode(Node):
     def execute(self, context):
         self.executed = True
         return self.return_value
+```
+
+### Creating Mock Workers
+
+```python
+from framework.orchestrator import Worker, Task, WorkflowContext
+
+class MockWorker(Worker):
+    def __init__(self, worker_id: str, capabilities: list[str]):
+        super().__init__(worker_id, capabilities)
+        self.executed_tasks = []
+    
+    def can_handle(self, task: Task) -> bool:
+        return task.task_type in self.capabilities
+    
+    def execute_task(self, task: Task, context: WorkflowContext) -> str:
+        self.executed_tasks.append(task.task_id)
+        return f"Result from {self.worker_id}"
 ```
 
 ### Testing Exceptions
@@ -237,51 +276,68 @@ Examples:
 
 ## Continuous Integration
 
-Tests should be run automatically on:
-- Every commit
-- Pull requests
+Tests run automatically via GitHub Actions on:
+- Every push to main/develop branches
+- All pull requests
 - Before releases
 
-Example GitHub Actions workflow:
+Our CI workflow (`.github/workflows/tests.yml`):
+- Runs linting with ruff
+- Executes full test suite with coverage
+- Uploads coverage reports to Codecov
+- Supports Python 3.13
 
-```yaml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-python@v2
-        with:
-          python-version: '3.13'
-      - name: Install dependencies
-        run: |
-          pip install uv
-          uv pip install -e ".[dev]"
-      - name: Run tests
-        run: python -m pytest tests/ -v --cov=framework
-```
+View test results: [GitHub Actions](https://github.com/pierrehanne/agent-workflow/actions)
 
 ## Test Metrics
 
 Current test metrics:
-- **Total Tests**: 138 (+ 28 pending google-genai install)
+- **Total Tests**: 187
 - **Pass Rate**: 100%
-- **Execution Time**: ~0.28s
-- **Coverage**: TBD (run with --cov flag)
+- **Execution Time**: ~1.46s
+- **Coverage**: 88%
+
+### Coverage by Module:
+- `framework/__init__.py`: 100%
+- `framework/exceptions.py`: 100%
+- `framework/providers/__init__.py`: 100%
+- `framework/providers/gemini.py`: 97%
+- `framework/logging_config.py`: 97%
+- `framework/base.py`: 95%
+- `framework/chaining.py`: 94%
+- `framework/parallel.py`: 91%
+- `framework/routing.py`: 87%
+- `framework/evaluator.py`: 85%
+- `framework/orchestrator.py`: 74%
+
+**Overall Coverage**: 88% (1017 statements, 121 missed)
 
 ## Contributing Tests
 
 When adding new features:
 
-1. Write tests first (TDD approach recommended)
-2. Ensure all tests pass before committing
-3. Aim for >80% code coverage
-4. Add integration tests for complex workflows
-5. Update this README with new test information
+1. **Write tests first** (TDD approach recommended)
+2. **Ensure all tests pass** before committing:
+   ```bash
+   python -m pytest tests/ -v
+   ```
+3. **Maintain coverage** above 85%:
+   ```bash
+   python -m pytest tests/ --cov=framework --cov-report=term-missing
+   ```
+4. **Add integration tests** for complex workflows
+5. **Update this README** with new test information
+6. **Follow naming conventions** for consistency
+
+### Test Checklist
+
+Before submitting a PR with new code:
+- [ ] Unit tests added for new functionality
+- [ ] All tests pass locally
+- [ ] Coverage maintained or improved
+- [ ] Edge cases tested
+- [ ] Error handling tested
+- [ ] Documentation updated
 
 ## Troubleshooting
 

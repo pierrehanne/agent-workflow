@@ -42,7 +42,7 @@ updates:
       time: "09:00"
     open-pull-requests-limit: 5
     reviewers:
-      - "yourusername"
+      - "pierrehanne"
     labels:
       - "dependencies"
       - "github-actions"

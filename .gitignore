@@ -143,6 +143,9 @@ dmypy.json
 *.swo
 *~
 
+# Ruff
+.ruff_cache
+
 # OS
 .DS_Store
 Thumbs.db
@@ -151,3 +154,5 @@ Thumbs.db
 *.key
 secrets.json
 .env.local
+.env.dev
+.env.prod
