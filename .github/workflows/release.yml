@@ -1,0 +1,132 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+    
+    - name: Install uv
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+    
+    - name: Build package
+      run: |
+        uv venv
+        source .venv/bin/activate
+        uv pip install build
+        python -m build
+    
+    - name: Generate Changelog
+      id: changelog
+      run: |
+        # Get previous tag
+        PREVIOUS_TAG=$(git tag --sort=-version:refname | grep -v "^${GITHUB_REF_NAME}$" | head -n 1)
+        
+        if [ -z "$PREVIOUS_TAG" ]; then
+          echo "No previous tag found, using all commits"
+          PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+        fi
+        
+        echo "Generating changelog from $PREVIOUS_TAG to ${GITHUB_REF_NAME}"
+        
+        # Generate changelog with conventional commits grouping
+        cat > CHANGELOG.md << 'EOF'
+        # Changelog
+        
+        ## What's Changed
+        
+        EOF
+        
+        # Features
+        FEATURES=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^feat" --grep="^feature" -i)
+        if [ ! -z "$FEATURES" ]; then
+          echo "### ✨ Features" >> CHANGELOG.md
+          echo "$FEATURES" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Bug Fixes
+        FIXES=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^fix" -i)
+        if [ ! -z "$FIXES" ]; then
+          echo "### 🐛 Bug Fixes" >> CHANGELOG.md
+          echo "$FIXES" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Documentation
+        DOCS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^docs" -i)
+        if [ ! -z "$DOCS" ]; then
+          echo "### 📚 Documentation" >> CHANGELOG.md
+          echo "$DOCS" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Performance
+        PERF=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^perf" -i)
+        if [ ! -z "$PERF" ]; then
+          echo "### ⚡ Performance" >> CHANGELOG.md
+          echo "$PERF" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Refactoring
+        REFACTOR=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^refactor" -i)
+        if [ ! -z "$REFACTOR" ]; then
+          echo "### ♻️ Refactoring" >> CHANGELOG.md
+          echo "$REFACTOR" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Tests
+        TESTS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^test" -i)
+        if [ ! -z "$TESTS" ]; then
+          echo "### 🧪 Tests" >> CHANGELOG.md
+          echo "$TESTS" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Chores
+        CHORES=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^chore" -i)
+        if [ ! -z "$CHORES" ]; then
+          echo "### 🔧 Chores" >> CHANGELOG.md
+          echo "$CHORES" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Other changes (not matching conventional commits)
+        OTHER=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --invert-grep --grep="^feat" --grep="^fix" --grep="^docs" --grep="^perf" --grep="^refactor" --grep="^test" --grep="^chore" -i)
+        if [ ! -z "$OTHER" ]; then
+          echo "### 🔀 Other Changes" >> CHANGELOG.md
+          echo "$OTHER" >> CHANGELOG.md
+          echo "" >> CHANGELOG.md
+        fi
+        
+        # Add contributors
+        echo "### 👥 Contributors" >> CHANGELOG.md
+        git log $PREVIOUS_TAG..HEAD --pretty=format:"- @%an" | sort -u >> CHANGELOG.md
+        
+        cat CHANGELOG.md
+    
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: dist/*
+        body_path: CHANGELOG.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
