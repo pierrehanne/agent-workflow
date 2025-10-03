@@ -35,12 +35,12 @@ jobs:
     - name: Lint with ruff
       run: |
         source .venv/bin/activate
-        ruff check framework/ tests/
+        python -m ruff check framework/ tests/ examples/
     
     - name: Run tests with coverage
       run: |
         source .venv/bin/activate
-        pytest tests/ -v --cov=framework --cov-report=xml --cov-report=term-missing
+        python -m pytest tests/ -v --cov=framework --cov-report=xml --cov-report=term-missing
     
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4

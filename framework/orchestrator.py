@@ -6,16 +6,16 @@ orchestrator coordinates multiple worker agents to execute subtasks in
 parallel or with dependencies, enabling complex multi-agent workflows.
 """
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from enum import Enum
-from typing import Any, Dict, List, Optional
-from datetime import datetime
 import logging
+from abc import ABC, abstractmethod
+from concurrent.futures import Future, ThreadPoolExecutor
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from threading import Lock
+from typing import Any, Dict, List, Optional
 
-from .base import Node, WorkflowContext, LLMProvider
-from .exceptions import TaskExecutionError
-
+from .base import LLMProvider, Node, WorkflowContext
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class TaskStatus(Enum):
     """
     Enumeration of possible task states.
-    
+
     Attributes:
         PENDING: Task is waiting to be executed
         RUNNING: Task is currently being executed
@@ -41,11 +41,11 @@ class TaskStatus(Enum):
 class Task:
     """
     Represents a unit of work to be executed by a worker.
-    
+
     Tasks can have dependencies on other tasks, ensuring proper execution
     ordering. Each task has a unique ID, type, associated data, and tracks
     its execution status and result.
-    
+
     Attributes:
         task_id: Unique identifier for the task
         task_type: Type of task (e.g., "summarize", "extract", "analyze")
@@ -53,7 +53,7 @@ class Task:
         dependencies: List of task IDs that must complete before this task
         status: Current execution status of the task
         result: Result of task execution (None until completed)
-    
+
     Example:
         >>> task = Task(
         ...     task_id="task_001",
@@ -71,17 +71,17 @@ class Task:
     dependencies: List[str] = field(default_factory=list)
     status: TaskStatus = TaskStatus.PENDING
     result: Optional[Any] = None
-    
+
     def is_ready(self, completed_tasks: Dict[str, 'Task']) -> bool:
         """
         Check if all dependencies are completed.
-        
+
         Args:
             completed_tasks: Dictionary of completed tasks by task_id
-        
+
         Returns:
             True if all dependencies are completed, False otherwise
-        
+
         Example:
             >>> task1 = Task("t1", "type1", {})
             >>> task1.status = TaskStatus.COMPLETED
@@ -90,7 +90,7 @@ class Task:
             True
         """
         return all(dep_id in completed_tasks for dep_id in self.dependencies)
-    
+
     def __repr__(self) -> str:
         """Return string representation of the task."""
         return f"Task(id='{self.task_id}', type='{self.task_type}', status={self.status.value})"
@@ -100,15 +100,15 @@ class Task:
 class Worker(ABC):
     """
     Abstract base class for worker agents.
-    
+
     Workers are specialized agents that can handle specific types of tasks.
     Each worker has a unique ID and a set of capabilities that determine
     which tasks it can execute.
-    
+
     Attributes:
         worker_id: Unique identifier for the worker
         capabilities: List of task types this worker can handle
-    
+
     Example:
         >>> class CustomWorker(Worker):
         ...     def can_handle(self, task: Task) -> bool:
@@ -120,58 +120,58 @@ class Worker(ABC):
         ...     capabilities=["summarize", "extract"]
         ... )
     """
-    
+
     def __init__(self, worker_id: str, capabilities: List[str]) -> None:
         """
         Initialize a worker with an ID and capabilities.
-        
+
         Args:
             worker_id: Unique identifier for this worker
             capabilities: List of task types this worker can handle
         """
         self.worker_id = worker_id
         self.capabilities = capabilities
-    
+
     @abstractmethod
     def can_handle(self, task: Task) -> bool:
         """
         Determine if this worker can handle the given task.
-        
+
         This method should check if the task type matches the worker's
         capabilities and any other requirements.
-        
+
         Args:
             task: The task to evaluate
-        
+
         Returns:
             True if this worker can handle the task, False otherwise
-        
+
         Raises:
             NotImplementedError: If not implemented by subclass
         """
         pass
-    
+
     @abstractmethod
     def execute_task(self, task: Task, context: WorkflowContext) -> Any:
         """
         Execute the given task.
-        
+
         This method performs the actual work of the task and returns
         the result. It has access to the workflow context for reading
         inputs and storing intermediate results.
-        
+
         Args:
             task: The task to execute
             context: The workflow context for data access
-        
+
         Returns:
             The result of executing the task
-        
+
         Raises:
             NotImplementedError: If not implemented by subclass
         """
         pass
-    
+
     def __repr__(self) -> str:
         """Return string representation of the worker."""
         return f"{self.__class__.__name__}(id='{self.worker_id}', capabilities={self.capabilities})"
@@ -181,18 +181,18 @@ class Worker(ABC):
 class LLMWorker(Worker):
     """
     Concrete worker implementation for LLM-based tasks.
-    
+
     LLMWorker uses an LLM provider to execute tasks by formatting prompts
     from templates and generating responses. It supports different prompt
     templates for different task types.
-    
+
     Attributes:
         worker_id: Unique identifier for the worker
         capabilities: List of task types this worker can handle
         llm_provider: The LLM provider to use for generation
         prompt_templates: Dictionary mapping task types to prompt templates
         model_params: Optional parameters for the LLM
-    
+
     Example:
         >>> provider = GeminiProvider(api_key="...")
         >>> worker = LLMWorker(
@@ -208,7 +208,7 @@ class LLMWorker(Worker):
         >>> context = WorkflowContext()
         >>> result = worker.execute_task(task, context)
     """
-    
+
     def __init__(
         self,
         worker_id: str,
@@ -219,7 +219,7 @@ class LLMWorker(Worker):
     ) -> None:
         """
         Initialize an LLM worker.
-        
+
         Args:
             worker_id: Unique identifier for this worker
             capabilities: List of task types this worker can handle
@@ -231,18 +231,18 @@ class LLMWorker(Worker):
         self.llm_provider = llm_provider
         self.prompt_templates = prompt_templates
         self.model_params = model_params or {}
-    
+
     def can_handle(self, task: Task) -> bool:
         """
         Check if this worker can handle the task.
-        
+
         A worker can handle a task if:
         1. The task type is in the worker's capabilities
         2. A prompt template exists for the task type
-        
+
         Args:
             task: The task to evaluate
-        
+
         Returns:
             True if this worker can handle the task, False otherwise
         """
@@ -250,21 +250,21 @@ class LLMWorker(Worker):
             task.task_type in self.capabilities and
             task.task_type in self.prompt_templates
         )
-    
+
     def execute_task(self, task: Task, context: WorkflowContext) -> str:
         """
         Execute the task using the LLM provider.
-        
+
         Formats the appropriate prompt template with task data,
         calls the LLM provider, and returns the generated response.
-        
+
         Args:
             task: The task to execute
             context: The workflow context for data access
-        
+
         Returns:
             The generated text response from the LLM
-        
+
         Raises:
             ValueError: If no prompt template exists for the task type
         """
@@ -272,41 +272,36 @@ class LLMWorker(Worker):
         template = self.prompt_templates.get(task.task_type)
         if not template:
             raise ValueError(f"No prompt template for task type: {task.task_type}")
-        
+
         # Format the prompt with task data
         try:
             prompt = template.format(**task.data)
         except KeyError as e:
             raise ValueError(f"Missing required data for prompt template: {e}")
-        
+
         # Log task execution
         logger.info(f"Worker {self.worker_id} executing task {task.task_id} (type: {task.task_type})")
-        
+
         # Generate response using LLM provider
         response = self.llm_provider.generate(prompt, **self.model_params)
-        
+
         # Update context metadata
         context.metadata["model_calls"] = context.metadata.get("model_calls", 0) + 1
-        
+
         logger.info(f"Worker {self.worker_id} completed task {task.task_id}")
-        
+
         return response
-
-
-
-from concurrent.futures import ThreadPoolExecutor, Future, as_completed
-from threading import Lock
 
 
 class Orchestrator(Node):
     """
     Coordinates multiple workers to execute tasks with dependencies.
-    
+
     The Orchestrator manages a pool of workers and a queue of tasks,
     assigning tasks to appropriate workers based on their capabilities.
     It handles dependency resolution, concurrent execution, and result
     aggregation.
-    
+
     Attributes:
         name: Name of the orchestrator node
         description: Description of the orchestrator's purpose
@@ -315,7 +310,7 @@ class Orchestrator(Node):
         completed_tasks: Dictionary of completed tasks by task_id
         failed_tasks: Dictionary of failed tasks by task_id
         max_concurrent_tasks: Maximum number of tasks to run concurrently
-    
+
     Example:
         >>> orchestrator = Orchestrator(
         ...     name="doc_processor",
@@ -328,7 +323,7 @@ class Orchestrator(Node):
         >>> context = WorkflowContext()
         >>> results = orchestrator.execute(context)
     """
-    
+
     def __init__(
         self,
         name: str,
@@ -337,7 +332,7 @@ class Orchestrator(Node):
     ) -> None:
         """
         Initialize the orchestrator.
-        
+
         Args:
             name: Unique identifier for the orchestrator
             max_concurrent_tasks: Maximum number of concurrent task executions
@@ -350,17 +345,17 @@ class Orchestrator(Node):
         self.failed_tasks: Dict[str, Task] = {}
         self.max_concurrent_tasks = max_concurrent_tasks
         self._lock = Lock()
-    
+
     def add_worker(self, worker: Worker) -> 'Orchestrator':
         """
         Add a worker to the orchestrator's worker pool.
-        
+
         Args:
             worker: The worker to add
-        
+
         Returns:
             Self for method chaining
-        
+
         Example:
             >>> orchestrator = Orchestrator("orch")
             >>> orchestrator.add_worker(worker1).add_worker(worker2)
@@ -368,17 +363,17 @@ class Orchestrator(Node):
         self.workers.append(worker)
         logger.info(f"Added worker {worker.worker_id} to orchestrator {self.name}")
         return self
-    
+
     def add_task(self, task: Task) -> 'Orchestrator':
         """
         Add a task to the orchestrator's task queue.
-        
+
         Args:
             task: The task to add
-        
+
         Returns:
             Self for method chaining
-        
+
         Example:
             >>> orchestrator = Orchestrator("orch")
             >>> orchestrator.add_task(task1).add_task(task2)
@@ -386,20 +381,20 @@ class Orchestrator(Node):
         self.task_queue.append(task)
         logger.info(f"Added task {task.task_id} (type: {task.task_type}) to orchestrator {self.name}")
         return self
-    
+
     def assign_task(self, task: Task) -> Optional[Worker]:
         """
         Find an appropriate worker for the given task.
-        
+
         Selects the first worker that can handle the task based on
         the worker's can_handle method.
-        
+
         Args:
             task: The task to assign
-        
+
         Returns:
             A worker that can handle the task, or None if no worker is available
-        
+
         Example:
             >>> worker = orchestrator.assign_task(task)
             >>> if worker:
@@ -409,42 +404,42 @@ class Orchestrator(Node):
             if worker.can_handle(task):
                 logger.debug(f"Assigned task {task.task_id} to worker {worker.worker_id}")
                 return worker
-        
+
         logger.warning(f"No worker available for task {task.task_id} (type: {task.task_type})")
         return None
-    
+
     def execute(self, context: WorkflowContext) -> Dict[str, Any]:
         """
         Execute all tasks using the worker pool.
-        
+
         Manages task execution with dependency resolution and concurrent
         processing. Returns aggregated results from all completed tasks.
-        
+
         Args:
             context: The workflow context
-        
+
         Returns:
             Dictionary containing results from all tasks
-        
+
         Raises:
             TaskExecutionError: If critical tasks fail
         """
         logger.info(f"Orchestrator {self.name} starting execution with {len(self.task_queue)} tasks")
-        
+
         # Execute tasks and wait for completion
         results = self.wait_for_completion(context)
-        
+
         # Store results in context
         context.set(f"{self.name}_results", results)
-        
+
         logger.info(f"Orchestrator {self.name} completed: {len(self.completed_tasks)} succeeded, {len(self.failed_tasks)} failed")
-        
+
         return results
-    
+
     def validate(self) -> bool:
         """
         Validate the orchestrator configuration.
-        
+
         Returns:
             True if valid (has workers and tasks), False otherwise
         """
@@ -454,21 +449,21 @@ class Orchestrator(Node):
             len(self.task_queue) > 0
         )
 
-    
+
     def wait_for_completion(self, context: WorkflowContext) -> Dict[str, Any]:
         """
         Execute tasks and wait for all to complete.
-        
+
         Manages concurrent task execution with dependency resolution.
         Tasks are executed as soon as their dependencies are satisfied.
         Failed tasks are logged but don't block other independent tasks.
-        
+
         Args:
             context: The workflow context for worker communication
-        
+
         Returns:
             Dictionary mapping task_id to results for all completed tasks
-        
+
         Example:
             >>> orchestrator.add_task(task1)
             >>> orchestrator.add_task(task2)
@@ -479,7 +474,7 @@ class Orchestrator(Node):
         pending_tasks = self.task_queue.copy()
         running_tasks: Dict[str, Future] = {}
         task_workers: Dict[str, Worker] = {}
-        
+
         with ThreadPoolExecutor(max_workers=self.max_concurrent_tasks) as executor:
             while pending_tasks or running_tasks:
                 # Find tasks that are ready to execute
@@ -487,23 +482,23 @@ class Orchestrator(Node):
                     task for task in pending_tasks
                     if task.is_ready(self.completed_tasks)
                 ]
-                
+
                 # Submit ready tasks for execution
                 for task in ready_tasks:
                     if len(running_tasks) >= self.max_concurrent_tasks:
                         break
-                    
+
                     # Assign task to a worker
                     worker = self.assign_task(task)
                     if worker:
                         task.status = TaskStatus.RUNNING
                         pending_tasks.remove(task)
-                        
+
                         # Submit task for execution
                         future = executor.submit(self._execute_task_safely, task, worker, context)
                         running_tasks[task.task_id] = future
                         task_workers[task.task_id] = worker
-                        
+
                         logger.info(f"Started task {task.task_id} on worker {worker.worker_id}")
                     else:
                         # No worker available for this task
@@ -512,7 +507,7 @@ class Orchestrator(Node):
                         task.result = f"No worker available for task type: {task.task_type}"
                         self.failed_tasks[task.task_id] = task
                         pending_tasks.remove(task)
-                
+
                 # Check for completed tasks
                 if running_tasks:
                     # Wait for at least one task to complete
@@ -520,39 +515,39 @@ class Orchestrator(Node):
                     for task_id, future in list(running_tasks.items()):
                         if future.done():
                             done_futures.append((task_id, future))
-                    
+
                     # If no tasks are done yet, wait a bit
                     if not done_futures:
                         import time
                         time.sleep(0.1)
                         continue
-                    
+
                     # Process completed tasks
                     for task_id, future in done_futures:
                         task = next(t for t in self.task_queue if t.task_id == task_id)
                         worker = task_workers[task_id]
-                        
+
                         try:
                             result = future.result()
                             task.status = TaskStatus.COMPLETED
                             task.result = result
                             self.completed_tasks[task_id] = task
-                            
+
                             # Store result in context for worker communication
                             context.set(f"task_{task_id}_result", result)
-                            
+
                             logger.info(f"Task {task_id} completed successfully")
                         except Exception as e:
                             task.status = TaskStatus.FAILED
                             task.result = str(e)
                             self.failed_tasks[task_id] = task
-                            
+
                             logger.error(f"Task {task_id} failed: {e}")
-                        
+
                         # Remove from running tasks
                         del running_tasks[task_id]
                         del task_workers[task_id]
-                
+
                 # If no tasks are ready and none are running, we have unresolvable dependencies
                 if not ready_tasks and not running_tasks and pending_tasks:
                     logger.error(f"Deadlock detected: {len(pending_tasks)} tasks with unresolved dependencies")
@@ -561,31 +556,31 @@ class Orchestrator(Node):
                         task.result = "Unresolved dependencies"
                         self.failed_tasks[task.task_id] = task
                     break
-        
+
         # Calculate execution time
         execution_time = (datetime.now() - start_time).total_seconds() * 1000
         context.metadata["execution_time_ms"] = context.metadata.get("execution_time_ms", 0) + execution_time
-        
+
         # Aggregate results
         results = self._aggregate_results()
-        
+
         return results
-    
+
     def _execute_task_safely(self, task: Task, worker: Worker, context: WorkflowContext) -> Any:
         """
         Execute a task with error handling.
-        
+
         Wraps worker.execute_task with try-catch to ensure exceptions
         are properly captured and logged.
-        
+
         Args:
             task: The task to execute
             worker: The worker to execute the task
             context: The workflow context
-        
+
         Returns:
             The result of task execution
-        
+
         Raises:
             Exception: Re-raises any exception from task execution
         """
@@ -595,20 +590,20 @@ class Orchestrator(Node):
         except Exception as e:
             logger.error(f"Error executing task {task.task_id}: {e}", exc_info=True)
             raise
-    
+
     def _aggregate_results(self) -> Dict[str, Any]:
         """
         Aggregate results from all workers.
-        
+
         Collects results from completed tasks and organizes them
         into a structured dictionary.
-        
+
         Returns:
             Dictionary containing:
                 - completed: Dict of task_id -> result for successful tasks
                 - failed: Dict of task_id -> error for failed tasks
                 - summary: Statistics about execution
-        
+
         Example:
             >>> results = orchestrator._aggregate_results()
             >>> print(results["summary"]["total_tasks"])

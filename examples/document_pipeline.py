@@ -18,30 +18,28 @@ Usage:
     python examples/document_pipeline.py
 """
 
+import logging
 import os
 import sys
-import logging
 from datetime import datetime
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Import framework components
-from framework.base import WorkflowContext, PromptNode
-from framework.providers.gemini import GeminiProvider
+from framework.base import PromptNode, WorkflowContext
 from framework.chaining import ChainWorkflow
-from framework.routing import RouterNode, ThresholdCondition, LambdaCondition
-from framework.parallel import ParallelNode, DictMerge
-from framework.orchestrator import Orchestrator, Task, LLMWorker
 from framework.evaluator import (
-    EvaluatorNode,
-    LengthEvaluator,
-    KeywordEvaluator,
     CompositeEvaluator,
-    RetryStrategy,
-    PromptRefinementStrategy
+    EvaluatorNode,
+    KeywordEvaluator,
+    LengthEvaluator,
+    PromptRefinementStrategy,
 )
-
+from framework.orchestrator import LLMWorker, Orchestrator, Task
+from framework.parallel import DictMerge, ParallelNode
+from framework.providers.gemini import GeminiProvider
+from framework.routing import LambdaCondition, RouterNode
 
 # Configure logging to show execution flow
 logging.basicConfig(
@@ -56,29 +54,29 @@ logger = logging.getLogger(__name__)
 SAMPLE_DOCUMENT = """
 Artificial Intelligence and Machine Learning: The Future of Technology
 
-The rapid advancement of artificial intelligence (AI) and machine learning (ML) technologies 
-is transforming industries across the globe. From healthcare to finance, transportation to 
-entertainment, AI systems are becoming increasingly sophisticated and capable of performing 
+The rapid advancement of artificial intelligence (AI) and machine learning (ML) technologies
+is transforming industries across the globe. From healthcare to finance, transportation to
+entertainment, AI systems are becoming increasingly sophisticated and capable of performing
 complex tasks that once required human intelligence.
 
-Machine learning, a subset of AI, enables computers to learn from data without being explicitly 
-programmed. Deep learning, a further specialization, uses neural networks with multiple layers 
-to process information in ways that mimic the human brain. These technologies have led to 
+Machine learning, a subset of AI, enables computers to learn from data without being explicitly
+programmed. Deep learning, a further specialization, uses neural networks with multiple layers
+to process information in ways that mimic the human brain. These technologies have led to
 breakthroughs in image recognition, natural language processing, and autonomous systems.
 
-Major tech companies like Google, Microsoft, and OpenAI are investing billions of dollars in 
-AI research and development. The release of large language models such as GPT-4 and Google's 
-Gemini has demonstrated the potential for AI to understand and generate human-like text, 
+Major tech companies like Google, Microsoft, and OpenAI are investing billions of dollars in
+AI research and development. The release of large language models such as GPT-4 and Google's
+Gemini has demonstrated the potential for AI to understand and generate human-like text,
 revolutionizing how we interact with computers.
 
-However, the rise of AI also brings significant challenges. Concerns about job displacement, 
-algorithmic bias, privacy violations, and the potential misuse of AI technologies have sparked 
-important ethical debates. Researchers and policymakers are working to develop frameworks for 
+However, the rise of AI also brings significant challenges. Concerns about job displacement,
+algorithmic bias, privacy violations, and the potential misuse of AI technologies have sparked
+important ethical debates. Researchers and policymakers are working to develop frameworks for
 responsible AI development that prioritize safety, fairness, and transparency.
 
-Looking ahead, AI is expected to play an even more central role in society. Experts predict 
-that AI will enhance human capabilities rather than replace them, leading to new forms of 
-human-AI collaboration. The key will be ensuring that these powerful technologies are developed 
+Looking ahead, AI is expected to play an even more central role in society. Experts predict
+that AI will enhance human capabilities rather than replace them, leading to new forms of
+human-AI collaboration. The key will be ensuring that these powerful technologies are developed
 and deployed in ways that benefit all of humanity.
 """
 
@@ -86,10 +84,10 @@ and deployed in ways that benefit all of humanity.
 def setup_gemini_provider():
     """
     Set up the Gemini API provider with configuration from environment.
-    
+
     Returns:
         GeminiProvider: Configured provider instance
-    
+
     Raises:
         ValueError: If GEMINI_API_KEY is not set
     """
@@ -99,7 +97,7 @@ def setup_gemini_provider():
             "GEMINI_API_KEY environment variable not set. "
             "Please set it with: export GEMINI_API_KEY='your-api-key'"
         )
-    
+
     logger.info("Initializing Gemini provider...")
     provider = GeminiProvider(
         api_key=api_key,
@@ -109,30 +107,30 @@ def setup_gemini_provider():
             "max_output_tokens": 1024
         }
     )
-    
+
     return provider
 
 
 def create_parallel_extraction_pipeline(provider):
     """
     PATTERN 1: PARALLEL EXECUTION
-    
+
     Create a parallel node that extracts different aspects of the document
     concurrently. This demonstrates how to run multiple independent LLM
     calls in parallel to reduce overall execution time.
-    
+
     Args:
         provider: LLM provider instance
-    
+
     Returns:
         ParallelNode: Configured parallel extraction node
     """
     logger.info("Creating parallel extraction pipeline...")
-    
+
     # Node 1: Extract key topics
     topic_extractor = PromptNode(
         name="topic_extractor",
-        prompt_template="""Extract the 3-5 main topics from this document. 
+        prompt_template="""Extract the 3-5 main topics from this document.
 List them as bullet points.
 
 Document:
@@ -144,11 +142,11 @@ Topics:""",
         output_key="topics",
         description="Extracts main topics from document"
     )
-    
+
     # Node 2: Extract named entities
     entity_extractor = PromptNode(
         name="entity_extractor",
-        prompt_template="""Extract all named entities (companies, people, technologies, organizations) 
+        prompt_template="""Extract all named entities (companies, people, technologies, organizations)
 from this document. List them as bullet points.
 
 Document:
@@ -160,11 +158,11 @@ Entities:""",
         output_key="entities",
         description="Extracts named entities"
     )
-    
+
     # Node 3: Analyze sentiment
     sentiment_analyzer = PromptNode(
         name="sentiment_analyzer",
-        prompt_template="""Analyze the overall sentiment and tone of this document. 
+        prompt_template="""Analyze the overall sentiment and tone of this document.
 Is it positive, negative, neutral, or mixed? Provide a brief explanation.
 
 Document:
@@ -176,7 +174,7 @@ Sentiment Analysis:""",
         output_key="sentiment",
         description="Analyzes document sentiment"
     )
-    
+
     # Create parallel node with dictionary merge strategy
     # This will combine results into a single dictionary
     parallel_node = ParallelNode(
@@ -185,30 +183,30 @@ Sentiment Analysis:""",
         max_workers=3,
         description="Parallel extraction of topics, entities, and sentiment"
     )
-    
+
     parallel_node.add_node(topic_extractor)
     parallel_node.add_node(entity_extractor)
     parallel_node.add_node(sentiment_analyzer)
-    
+
     return parallel_node
 
 
 def create_chained_processing_pipeline(provider):
     """
     PATTERN 2: PROMPT CHAINING
-    
+
     Create a chain that processes the parallel extraction results sequentially.
     Each step builds on the previous one, demonstrating data flow through
     multiple processing stages.
-    
+
     Args:
         provider: LLM provider instance
-    
+
     Returns:
         ChainWorkflow: Configured chain workflow
     """
     logger.info("Creating chained processing pipeline...")
-    
+
     # Node 1: Merge parallel results into a structured analysis
     merge_node = PromptNode(
         name="merge_analysis",
@@ -225,7 +223,7 @@ Provide a brief integrated analysis (2-3 sentences):""",
         output_key="integrated_analysis",
         description="Merges parallel analysis results"
     )
-    
+
     # Node 2: Generate initial summary
     summary_node = PromptNode(
         name="initial_summary",
@@ -242,35 +240,35 @@ Summary (3-4 sentences):""",
         output_key="initial_summary",
         description="Generates initial document summary"
     )
-    
+
     # Create chain workflow
     chain = ChainWorkflow(
         name="processing_chain",
         pass_through_context=True,
         description="Sequential processing of analysis results"
     )
-    
+
     chain.add_node(merge_node).add_node(summary_node)
-    
+
     return chain
 
 
 def create_routing_pipeline(provider):
     """
     PATTERN 3: CONDITIONAL ROUTING
-    
+
     Create a router that directs to different summarization strategies
     based on document characteristics (length). This demonstrates dynamic
     workflow branching based on runtime conditions.
-    
+
     Args:
         provider: LLM provider instance
-    
+
     Returns:
         RouterNode: Configured router node
     """
     logger.info("Creating routing pipeline...")
-    
+
     # Short document handler - simple summary
     short_summary_node = PromptNode(
         name="short_summary",
@@ -284,7 +282,7 @@ Brief Summary:""",
         model_params={"temperature": 0.5},
         description="Handles short documents"
     )
-    
+
     # Long document handler - detailed summary with sections
     long_summary_node = PromptNode(
         name="long_summary",
@@ -305,13 +303,13 @@ Detailed Summary:""",
         model_params={"temperature": 0.6},
         description="Handles long documents"
     )
-    
+
     # Create router
     router = RouterNode(
         name="summary_router",
         description="Routes based on document length"
     )
-    
+
     # Route 1: Short documents (< 500 characters)
     router.add_route(
         condition=LambdaCondition(
@@ -321,7 +319,7 @@ Detailed Summary:""",
         node=short_summary_node,
         name="short_document_route"
     )
-    
+
     # Route 2: Long documents (>= 500 characters)
     router.add_route(
         condition=LambdaCondition(
@@ -331,30 +329,30 @@ Detailed Summary:""",
         node=long_summary_node,
         name="long_document_route"
     )
-    
+
     # Set default to long summary
     router.set_default(long_summary_node)
-    
+
     return router
 
 
 def create_evaluator_optimizer_pipeline(provider, target_node):
     """
     PATTERN 4: EVALUATOR-OPTIMIZER LOOP
-    
+
     Wrap a node with an evaluator that assesses output quality and
     applies optimization strategies to improve results. This demonstrates
     iterative refinement for quality assurance.
-    
+
     Args:
         provider: LLM provider instance
         target_node: The node to evaluate and optimize
-    
+
     Returns:
         EvaluatorNode: Configured evaluator node
     """
     logger.info("Creating evaluator-optimizer pipeline...")
-    
+
     # Create composite evaluator with multiple criteria
     evaluator = CompositeEvaluator([
         # Check length is reasonable (50-500 characters)
@@ -370,7 +368,7 @@ def create_evaluator_optimizer_pipeline(provider, target_node):
             case_sensitive=False
         ), 0.3)
     ])
-    
+
     # Create evaluator node with prompt refinement strategy
     evaluator_node = EvaluatorNode(
         name="optimized_summary",
@@ -382,28 +380,28 @@ def create_evaluator_optimizer_pipeline(provider, target_node):
         keep_best=True,
         description="Evaluates and optimizes summary quality"
     )
-    
+
     return evaluator_node
 
 
 def create_orchestrator_pipeline(provider):
     """
     PATTERN 5: ORCHESTRATOR-WORKERS
-    
+
     Create an orchestrator that coordinates multiple workers to perform
     final processing tasks. This demonstrates multi-agent coordination
     with task dependencies.
-    
+
     Args:
         provider: LLM provider instance
-    
+
     Returns:
         Orchestrator: Configured orchestrator node
     """
     logger.info("Creating orchestrator pipeline...")
-    
+
     # Create workers with different capabilities
-    
+
     # Worker 1: Formatting specialist
     formatter_worker = LLMWorker(
         worker_id="formatter",
@@ -418,7 +416,7 @@ Formatted Output:"""
         },
         model_params={"temperature": 0.3}
     )
-    
+
     # Worker 2: Keyword extraction specialist
     keyword_worker = LLMWorker(
         worker_id="keyword_extractor",
@@ -433,7 +431,7 @@ Keywords (comma-separated):"""
         },
         model_params={"temperature": 0.4}
     )
-    
+
     # Worker 3: Title generation specialist
     title_worker = LLMWorker(
         worker_id="title_generator",
@@ -448,19 +446,19 @@ Title:"""
         },
         model_params={"temperature": 0.7}
     )
-    
+
     # Create orchestrator
     orchestrator = Orchestrator(
         name="final_processing",
         max_concurrent_tasks=3,
         description="Coordinates final processing tasks"
     )
-    
+
     # Add workers
     orchestrator.add_worker(formatter_worker)
     orchestrator.add_worker(keyword_worker)
     orchestrator.add_worker(title_worker)
-    
+
     # Define tasks with dependencies
     # Task 1: Format the summary (no dependencies)
     format_task = Task(
@@ -469,7 +467,7 @@ Title:"""
         data={"summary": "{final_summary}"},  # Will be filled at runtime
         dependencies=[]
     )
-    
+
     # Task 2: Extract keywords (depends on formatting)
     keyword_task = Task(
         task_id="extract_keywords",
@@ -477,7 +475,7 @@ Title:"""
         data={"summary": "{final_summary}"},
         dependencies=[]  # Can run in parallel with formatting
     )
-    
+
     # Task 3: Generate title (depends on formatting)
     title_task = Task(
         task_id="generate_title",
@@ -485,18 +483,18 @@ Title:"""
         data={"summary": "{final_summary}"},
         dependencies=[]  # Can run in parallel with others
     )
-    
+
     orchestrator.add_task(format_task)
     orchestrator.add_task(keyword_task)
     orchestrator.add_task(title_task)
-    
+
     return orchestrator
 
 
 def run_complete_pipeline():
     """
     Execute the complete document processing pipeline demonstrating all patterns.
-    
+
     This function orchestrates the entire workflow:
     1. Initialize provider and context
     2. Run parallel extraction
@@ -508,17 +506,17 @@ def run_complete_pipeline():
     logger.info("=" * 80)
     logger.info("STARTING COMPREHENSIVE DOCUMENT PROCESSING PIPELINE")
     logger.info("=" * 80)
-    
+
     start_time = datetime.now()
-    
+
     try:
         # Step 1: Setup
         provider = setup_gemini_provider()
         context = WorkflowContext()
         context.set("document", SAMPLE_DOCUMENT)
-        
+
         logger.info(f"\nProcessing document ({len(SAMPLE_DOCUMENT)} characters)...")
-        
+
         # Step 2: PARALLEL - Extract features concurrently
         logger.info("\n" + "=" * 80)
         logger.info("STEP 1: PARALLEL EXTRACTION")
@@ -526,77 +524,77 @@ def run_complete_pipeline():
         parallel_pipeline = create_parallel_extraction_pipeline(provider)
         parallel_results = parallel_pipeline.execute(context)
         logger.info(f"Parallel extraction completed. Results: {list(parallel_results.keys())}")
-        
+
         # Update context with parallel results
         for key, value in parallel_results.items():
             context.set(key, value)
-        
+
         # Step 3: CHAIN - Process results sequentially
         logger.info("\n" + "=" * 80)
         logger.info("STEP 2: CHAINED PROCESSING")
         logger.info("=" * 80)
         chain_pipeline = create_chained_processing_pipeline(provider)
-        chain_result = chain_pipeline.execute(context)
-        logger.info(f"Chain processing completed")
-        
+        chain_pipeline.execute(context)
+        logger.info("Chain processing completed")
+
         # Step 4: ROUTER - Route based on document characteristics
         logger.info("\n" + "=" * 80)
         logger.info("STEP 3: CONDITIONAL ROUTING")
         logger.info("=" * 80)
         router_pipeline = create_routing_pipeline(provider)
-        
+
         # Wrap router with evaluator-optimizer
         logger.info("\n" + "=" * 80)
         logger.info("STEP 4: EVALUATOR-OPTIMIZER LOOP")
         logger.info("=" * 80)
         optimized_router = create_evaluator_optimizer_pipeline(provider, router_pipeline)
         final_summary = optimized_router.execute(context)
-        logger.info(f"Optimized summary generated")
-        
+        logger.info("Optimized summary generated")
+
         # Step 5: ORCHESTRATOR - Final processing tasks
         logger.info("\n" + "=" * 80)
         logger.info("STEP 5: ORCHESTRATOR-WORKERS COORDINATION")
         logger.info("=" * 80)
-        
+
         # Update orchestrator tasks with actual summary
         orchestrator = create_orchestrator_pipeline(provider)
         # Update task data with actual summary
         for task in orchestrator.task_queue:
             task.data = {"summary": final_summary}
-        
+
         orchestrator_results = orchestrator.execute(context)
-        
+
         # Display final results
         logger.info("\n" + "=" * 80)
         logger.info("PIPELINE COMPLETE - FINAL RESULTS")
         logger.info("=" * 80)
-        
+
         print("\n" + "=" * 80)
         print("DOCUMENT PROCESSING RESULTS")
         print("=" * 80)
-        
+
         print("\n📊 PARALLEL EXTRACTION RESULTS:")
         print("-" * 80)
         print(f"\nTopics:\n{context.get('topics', 'N/A')}")
         print(f"\nEntities:\n{context.get('entities', 'N/A')}")
         print(f"\nSentiment:\n{context.get('sentiment', 'N/A')}")
-        
+
         print("\n🔗 CHAINED PROCESSING RESULTS:")
         print("-" * 80)
         print(f"\nIntegrated Analysis:\n{context.get('integrated_analysis', 'N/A')}")
         print(f"\nInitial Summary:\n{context.get('initial_summary', 'N/A')}")
-        
+
         print("\n🎯 ROUTED & OPTIMIZED SUMMARY:")
         print("-" * 80)
         print(f"\n{final_summary}")
-        
+
         print("\n🤝 ORCHESTRATED FINAL PROCESSING:")
         print("-" * 80)
         completed = orchestrator_results.get("completed", {})
         print(f"\nTitle:\n{completed.get('generate_title', 'N/A')}")
         print(f"\nKeywords:\n{completed.get('extract_keywords', 'N/A')}")
         print(f"\nFormatted Output:\n{completed.get('format_summary', 'N/A')}")
-        
+
         # Display execution metrics
         duration = (datetime.now() - start_time).total_seconds()
         print("\n📈 EXECUTION METRICS:")
@@ -604,20 +602,20 @@ def run_complete_pipeline():
         print(f"Total Duration: {duration:.2f}s")
         print(f"Model Calls: {context.metadata.get('model_calls', 0)}")
         print(f"Routing Decisions: {len(context.metadata.get('routing_decisions', []))}")
-        
+
         # Display orchestrator summary
         summary = orchestrator_results.get("summary", {})
-        print(f"\nOrchestrator Tasks:")
+        print("\nOrchestrator Tasks:")
         print(f"  - Total: {summary.get('total_tasks', 0)}")
         print(f"  - Completed: {summary.get('completed', 0)}")
         print(f"  - Failed: {summary.get('failed', 0)}")
         print(f"  - Success Rate: {summary.get('success_rate', 0):.1%}")
-        
+
         print("\n" + "=" * 80)
         logger.info(f"Pipeline completed successfully in {duration:.2f}s")
-        
+
         return context
-        
+
     except Exception as e:
         logger.error(f"Pipeline failed: {e}", exc_info=True)
         raise
@@ -626,7 +624,7 @@ def run_complete_pipeline():
 def main():
     """Main entry point for the example."""
     try:
-        context = run_complete_pipeline()
+        run_complete_pipeline()
         logger.info("\n✅ Example completed successfully!")
         return 0
     except Exception as e:
