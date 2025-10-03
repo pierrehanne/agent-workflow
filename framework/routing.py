@@ -1,5 +1,5 @@
 """
-Routing module for the LLM Workflow Framework.
+Routing module for the Agent Workflow.
 
 This module provides conditional routing capabilities, allowing workflows to
 dynamically direct execution to different nodes based on runtime conditions.

@@ -1,4 +1,4 @@
-# LLM Workflow Framework
+# Agent Workflow
 
 A clean, modular Python framework for building sophisticated LLM-based pipelines using various workflow patterns. Built with Python 3.13 and integrated with Google Gemini API.
 

@@ -1,5 +1,5 @@
 """
-Base abstractions for the LLM Workflow Framework.
+Base abstractions for the Agent Workflow.
 
 This module provides the foundational classes and interfaces that all workflow
 components build upon, including context management, node abstractions, and

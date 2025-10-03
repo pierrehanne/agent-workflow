@@ -1,5 +1,5 @@
 """
-Exception hierarchy for the LLM Workflow Framework.
+Exception hierarchy for the Agent Workflow.
 
 This module defines all custom exceptions used throughout the framework,
 providing clear error types for different failure scenarios.

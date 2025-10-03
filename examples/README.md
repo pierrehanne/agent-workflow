@@ -1,4 +1,4 @@
-# LLM Workflow Framework Examples
+# Agent Workflow Examples
 
 This directory contains example implementations demonstrating the various workflow patterns supported by the framework.
 

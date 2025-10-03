@@ -1,5 +1,5 @@
 """
-Logging configuration for the LLM Workflow Framework.
+Logging configuration for the Agent Workflow.
 
 This module provides centralized logging configuration with support for
 environment variable-based log level control and consistent formatting

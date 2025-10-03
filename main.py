@@ -1,7 +1,7 @@
 """
 Comprehensive Document Processing Pipeline Example
 
-This example demonstrates all workflow patterns in the LLM Workflow Framework:
+This example demonstrates all workflow patterns in the Agent Workflow:
 1. PARALLEL: Extract different aspects concurrently (topics, entities, sentiment)
 2. CHAIN: Process results sequentially
 3. ROUTER: Route based on document characteristics

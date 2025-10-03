@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2025-10-03
 
 ### ✨ Features
-- Initial release of LLM Workflow Framework
+- Initial release of Agent Workflow
 - Prompt chaining workflow pattern
 - Conditional routing with keyword-based conditions
 - Parallel execution of LLM calls

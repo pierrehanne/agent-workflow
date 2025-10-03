@@ -1,5 +1,5 @@
 """
-Prompt chaining module for the LLM Workflow Framework.
+Prompt chaining module for the Agent Workflow.
 
 This module provides the ChainWorkflow class for sequential execution of nodes,
 where the output of each node is passed as input to the next node. This enables

@@ -1,5 +1,5 @@
 """
-LLM Workflow Framework - A modular framework for building LLM-based pipelines.
+Agent Workflow - A modular framework for building LLM-based pipelines.
 
 This framework provides abstractions and implementations for various workflow
 patterns including prompt chaining, routing, parallelization, orchestrator-workers,

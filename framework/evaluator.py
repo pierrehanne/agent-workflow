@@ -1,5 +1,5 @@
 """
-Evaluator-optimizer module for the LLM Workflow Framework.
+Evaluator-optimizer module for the Agent Workflow.
 
 This module provides abstractions and implementations for evaluating LLM outputs
 and optimizing them through iterative refinement. It supports custom evaluation

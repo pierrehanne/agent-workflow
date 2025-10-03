@@ -1,1 +1,1 @@
-"""Test suite for LLM Workflow Framework."""
+"""Test suite for Agent Workflow."""
